@@ -1,0 +1,75 @@
+name: Build fast_gui
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Git tag of raylib to build (raylib tags have no "v" prefix, e.g. "5.5", "6.0")
+  RAYLIB_REF: "6.2"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Checkout raylib
+        uses: actions/checkout@v4
+        with:
+          repository: raysan5/raylib
+          ref: ${{ env.RAYLIB_REF }}
+          path: raylib-src
+          fetch-depth: 1
+
+      - name: Set up MinGW-w64 (MSYS2 UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build raylib (static, Release = -O3)
+        run: |
+          cmake -S raylib-src -B raylib-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF
+          cmake --build raylib-build
+          cmake --install raylib-build --prefix "$PWD/raylib-install"
+
+      - name: Compile fast_gui.c
+        run: |
+          mkdir -p dist
+          # Optional extras you can add:
+          #   -march=x86-64-v3   faster, but needs a CPU with AVX2 (don't use -march=native on CI)
+          #   -ffast-math        aggressive floating-point optimizations
+          #   -mwindows          no console window
+          gcc -O3 -flto -fopenmp -DNDEBUG -s -static \
+            fast_gui.c -o dist/fast_gui.exe \
+            -I raylib-install/include \
+            -L raylib-install/lib \
+            -lraylib -lopengl32 -lgdi32 -lwinmm -lshell32 -luser32 -lm
+
+      - name: Show DLL dependencies
+        run: |
+          # Should list only Windows system DLLs (kernel32, user32, gdi32, opengl32, api-ms-win-crt-*, ...)
+          objdump -p dist/fast_gui.exe | grep "DLL Name"
+          ls -l dist/
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast_gui-windows-x64
+          path: dist/fast_gui.exe
+          if-no-files-found: error

@@ -26,8 +26,14 @@ jobs:
 
           # /O2 is MSVC's highest speed level (there is no /O3).
           # /Ob3 = aggressive inlining, /GL + /LTCG = whole-program optimization.
+          # Math library: MSVC has no separate libm (no -lm equivalent). The math.h
+          # functions live in the UCRT, which is linked automatically via /MT or /MD.
+          # /Oi (above) already turns sin/cos/sqrt/etc. into intrinsics where possible.
+          # /fp:fast = faster, less strict floating-point (allows reassociation/vectorization).
+          # _USE_MATH_DEFINES = exposes M_PI, M_E, etc. from <math.h> (MSVC hides them by default).
           $cflags = @(
             "/nologo", "/O2", "/Ob3", "/Oi", "/Ot", "/GL", "/Gy",
+            "/fp:fast", "/D_USE_MATH_DEFINES",
             "/openmp", "/DNDEBUG", "/I$raylib\include"
           )
           $lflags = @("/LTCG", "/OPT:REF", "/OPT:ICF")
