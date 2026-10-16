@@ -1,0 +1,75 @@
+name: Build fast_gui
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Compile fast_gui.c
+        shell: pwsh
+        run: |
+          $raylib = "raylib-6.2_win64_msvc16"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          # /O2 is MSVC's highest speed level (there is no /O3).
+          # /Ob3 = aggressive inlining, /GL + /LTCG = whole-program optimization.
+          $cflags = @(
+            "/nologo", "/O2", "/Ob3", "/Oi", "/Ot", "/GL", "/Gy",
+            "/openmp", "/DNDEBUG", "/I$raylib\include"
+          )
+          $lflags = @("/LTCG", "/OPT:REF", "/OPT:ICF")
+          $libs   = @(
+            "$raylib\lib\raylib.lib",
+            "opengl32.lib", "gdi32.lib", "user32.lib", "shell32.lib", "winmm.lib"
+          )
+
+          # /MT = statically linked C runtime (preferred).
+          # Falls back to /MD if the prebuilt raylib.lib was built against the DLL runtime.
+          $built = $false
+          foreach ($crt in @("/MT", "/MD")) {
+            Write-Host "::group::Compiling with $crt"
+            & cl.exe @cflags $crt fast_gui.c "/Fe:dist\fast_gui.exe" /link @lflags @libs
+            $code = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($code -eq 0) {
+              $built = $true
+              Write-Host "Build succeeded with $crt"
+              break
+            }
+            Write-Warning "Build with $crt failed (exit code $code)"
+          }
+          if (-not $built) { exit 1 }
+
+      - name: Bundle OpenMP runtime
+        shell: pwsh
+        run: |
+          # MSVC cannot link OpenMP statically; ship vcomp140.dll next to the exe.
+          $dll = Get-ChildItem -Path $env:VCToolsRedistDir -Recurse -Filter vcomp140.dll |
+                 Where-Object { $_.FullName -match '\\x64\\' } |
+                 Select-Object -First 1
+          if ($dll) {
+            Copy-Item $dll.FullName dist\
+            Write-Host "Bundled $($dll.FullName)"
+          } else {
+            Write-Warning "vcomp140.dll not found; users will need the VC++ Redistributable"
+          }
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast_gui-windows-x64
+          path: dist/
+          if-no-files-found: error
