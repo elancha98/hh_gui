@@ -56,7 +56,7 @@ jobs:
           #   -march=x86-64-v3   faster, but needs a CPU with AVX2 (don't use -march=native on CI)
           #   -ffast-math        aggressive floating-point optimizations
           #   -mwindows          no console window
-          gcc -O3 -flto -fopenmp -DNDEBUG -s -static \
+          gcc -O3 -flto -fopenmp -DNDEBUG -s -static -ffast-math -march=x86-64-v3 \
             fast_gui.c -o dist/fast_gui.exe \
             -I raylib-install/include \
             -L raylib-install/lib \
